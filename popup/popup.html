@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTM Publish Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+          <path fill="currentColor" d="M19.5 3.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2v20l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5z"/>
+        </svg>
+      </div>
+      <h1>GTM Publish Monitor</h1>
+    </div>
+    
+    <div class="content">
+      <div class="input-group">
+        <label for="webhook-url">Webhook URL</label>
+        <div class="input-wrapper">
+          <input type="url" id="webhook-url" placeholder="https://your-webhook-endpoint.com/hook">
+        </div>
+      </div>
+
+      <div class="status-container">
+        <div class="status">
+          <span class="status-dot"></span>
+          <span id="status-text">Monitoring inactive</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <button id="save-button" class="primary-button">Save</button>
+      <button id="test-button" class="secondary-button">Test Webhook</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
