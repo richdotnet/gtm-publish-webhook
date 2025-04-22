@@ -18,27 +18,31 @@
     </div>
     
     <div class="content">
-      <div class="input-group">
-        <label for="webhook-url">Webhook URL</label>
-        <div class="input-wrapper">
-          <input type="url" id="webhook-url" placeholder="https://your-webhook-endpoint.com/hook">
+      <div class="webhooks-section">
+        <div class="section-header">
+          <label>Webhook URLs</label>
+          <button id="add-webhook" class="icon-button" title="Add another webhook">+</button>
+        </div>
+        
+        <div id="webhooks-container">
+          <!-- Webhook inputs will be added here dynamically -->
         </div>
       </div>
 
       <div class="status-container">
-        <div class="status">
+        <div class="status-indicator">
           <span class="status-dot"></span>
-          <span id="status-text">Monitoring inactive</span>
+          <span id="status-text">Monitoring active</span>
         </div>
       </div>
     </div>
     
     <div class="footer">
+      <button id="test-button" class="secondary-button">Test Webhooks</button>
       <button id="save-button" class="primary-button">Save</button>
-      <button id="test-button" class="secondary-button">Test Webhook</button>
     </div>
   </div>
-
+  
   <script src="popup.js"></script>
 </body>
 </html>

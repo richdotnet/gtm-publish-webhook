@@ -13,6 +13,12 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://tagmanager.google.com/*"],
+      "js": ["content.js"]
+    }
+  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
