@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "GTM Publish Monitor",
+  "name": "GTM Publish Webhook",
   "version": "1.0",
   "description": "Monitors when a Google Tag Manager container is published and sends a webhook notification",
   "permissions": [

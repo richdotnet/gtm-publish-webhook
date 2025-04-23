@@ -1,32 +1,45 @@
 function extractUserEmail() {
-  try {
-    // Use the direct selector that returns email
-    const emailElement = document.querySelector('span[ng-bind="ctrl.currentGaiaUser.email"]');
-    if (emailElement && emailElement.innerHTML) {
-      const email = emailElement.innerHTML.trim();
-      if (email.includes('@')) {
-        chrome.storage.sync.set({ 'gtmUserEmail': email });
-        console.log('GTM Publish Monitor: Email found:', email);
-        return email;
-      }
+    try {
+        if (typeof preloadData === 'object' && preloadData.email) {
+            const email = preloadData.email;
+            chrome.storage.sync.set({ 'gtmUserEmail': email });
+            return email;
+        }
+    } catch (error) {
+        // Silent error in production
     }
-    
-  } catch (error) {
-    console.error('Error extracting email:', error);
-  }
-  
-  return null;
+
+    // Fallback: try to extract email from DOM
+    try {
+        const publishedByElement = document.querySelector('div[data-ng-if*="ctrl.publishedVersion.versionLastPublishedTime"]');
+        if (publishedByElement && publishedByElement.textContent) {
+            const publishText = publishedByElement.textContent.trim();
+            const emailMatch = publishText.match(/by\s+([^\s]+@[^\s]+)/i);
+            
+            if (emailMatch && emailMatch[1]) {
+                const email = emailMatch[1];
+                chrome.storage.sync.set({ 'gtmUserEmail': email });
+                return email;
+            }
+        }
+    } catch (error) {
+        // Silent error in production
+    }
+
+    return null;
 }
 
-// Run when page is loaded
-setTimeout(extractUserEmail, 2000);
+// Initial check
+setTimeout(() => {
+    extractUserEmail();
+}, 2000);
 
-// Re-run when DOM changes to catch email if it loads later
+// Re-run when DOM changes to catch information if it loads later
 const observer = new MutationObserver(() => {
-  extractUserEmail();
+    extractUserEmail();
 });
 
 observer.observe(document.body, {
-  childList: true,
-  subtree: true
+    childList: true,
+    subtree: true
 });

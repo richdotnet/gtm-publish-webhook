@@ -1,89 +1,175 @@
-const webhookUrlsKey = 'webhookUrls';  // Changed to plural
+// Core constants
+const webhookUrlsKey = 'webhookUrls';
 const userEmailKey = 'gtmUserEmail';
+const consoleLoggingKey = 'consoleLogging';
+const GTM_API_PATTERN = /https:\/\/tagmanager\.google\.com\/api\/accounts\/([^\/]+)\/containers\/([^\/]+)\/workspaces\/([^\/]+)\/publish/;
 
-// Function to update the extension's tooltip/hover message
-function updateExtensionTooltip() {
-  chrome.storage.sync.get([webhookUrlsKey], (data) => {
-    const webhookUrls = data[webhookUrlsKey] || [];
-    const isActive = webhookUrls.length > 0;
-    
-    const tooltipMessage = isActive 
-      ? `GTM Publish Monitor: Active (${webhookUrls.length} webhook${webhookUrls.length !== 1 ? 's' : ''})`
-      : 'GTM Publish Monitor: Inactive (no webhooks configured)';
-    
-    chrome.action.setTitle({ title: tooltipMessage });
-    
-    // Optionally update the icon badge
-    if (isActive) {
-      chrome.action.setBadgeText({ text: webhookUrls.length.toString() });
-      chrome.action.setBadgeBackgroundColor({ color: '#34a853' }); // Success green
-    } else {
-      chrome.action.setBadgeText({ text: '' }); // Clear badge
+// Helper functions - consolidated and simplified
+function logToConsole(...args) {
+  chrome.storage.sync.get([consoleLoggingKey], (data) => {
+    if (data[consoleLoggingKey] !== false) {
+      console.log('GTM Publish Monitor:', ...args);
     }
   });
 }
 
-// Update tooltip when extension loads
-updateExtensionTooltip();
+function matchesFilter(filter, value) {
+  if (!filter || filter === '') return true;
+  
+  try {
+    return new RegExp(filter).test(value);
+  } catch (e) {
+    return filter.split('|').includes(value);
+  }
+}
 
-// Listen for changes to webhook URLs and update tooltip
+function processWebhookUrl(webhook) {
+  // Handle string-only webhook format
+  if (typeof webhook === 'string' && webhook) {
+    return addProtocolIfNeeded(webhook);
+  }
+  
+  // Handle object webhook format
+  if (webhook && typeof webhook === 'object' && webhook.url) {
+    return addProtocolIfNeeded(webhook.url);
+  }
+  
+  return null;
+}
+
+function addProtocolIfNeeded(url) {
+  if (!url || typeof url !== 'string') return null;
+  return url.startsWith('http://') || url.startsWith('https://') ? url : 'http://' + url;
+}
+
+// Badge and tooltip management
+function updateExtensionBadge() {
+  chrome.storage.sync.get([webhookUrlsKey], (data) => {
+    const webhooks = data[webhookUrlsKey] || [];
+    const count = webhooks.length;
+    const isActive = count > 0;
+    
+    // Update badge
+    chrome.action.setBadgeText({ text: isActive ? count.toString() : '' });
+    if (isActive) chrome.action.setBadgeBackgroundColor({ color: '#34a853' });
+    
+    // Update tooltip
+    const tooltipMessage = isActive 
+      ? `GTM Publish Monitor: Active (${count} webhook${count !== 1 ? 's' : ''})`
+      : 'GTM Publish Monitor: Inactive (no webhooks configured)';
+    chrome.action.setTitle({ title: tooltipMessage });
+    
+    // Log status if enabled
+    logToConsole(isActive ? `Extension active with ${count} webhook(s)` : 'Extension inactive - no webhooks configured');
+  });
+}
+
+// Initialize extension
+updateExtensionBadge();
+
+// Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'sync' && changes[webhookUrlsKey]) {
-    updateExtensionTooltip();
+  if (namespace === 'sync') {
+    // Update badge when webhooks change
+    if (changes[webhookUrlsKey]) {
+      updateExtensionBadge();
+    }
+    
+    // Log console preference changes
+    if (changes[consoleLoggingKey]) {
+      const isEnabled = changes[consoleLoggingKey].newValue;
+      console.log(`GTM Publish Monitor: Console logging ${isEnabled ? 'enabled' : 'disabled'}`);
+    }
   }
 });
 
+// Main request handler
 chrome.webRequest.onCompleted.addListener(
   (details) => {
-    if (details.method === 'POST' && details.statusCode === 200) {
-      const urlPattern = /https:\/\/tagmanager\.google\.com\/api\/accounts\/([^\/]+)\/containers\/([^\/]+)\/workspaces\/([^\/]+)\/publish/;
-      const match = details.url.match(urlPattern);
+    // Only process successful POST requests
+    if (details.method !== 'POST' || details.statusCode !== 200) return;
+    
+    // Check if this is a GTM publish request
+    const match = details.url.match(GTM_API_PATTERN);
+    if (!match) return;
+    
+    // Extract IDs from URL
+    const [_, accountId, containerId] = match;
+    
+    logToConsole('Detected GTM publish event', { accountId, containerId, url: details.url });
+    
+    // Get webhooks and user info
+    chrome.storage.sync.get([webhookUrlsKey, userEmailKey], (data) => {
+      const webhooks = data[webhookUrlsKey] || [];
+      if (webhooks.length === 0) return;
       
-      if (match) {
-        const accountId = match[1];
-        const containerId = match[2];
+      const userEmail = data[userEmailKey] || "gtm_user@example.com";
+      
+      // Filter webhooks that match this event
+      const matchingWebhooks = webhooks.filter(webhook => {
+        if (typeof webhook === 'string') return true;
         
-        // Get both webhook URLs and user email from storage
-        chrome.storage.sync.get([webhookUrlsKey, userEmailKey], (data) => {
-          const webhookUrls = data[webhookUrlsKey] || [];  // Default to empty array
-          const userEmail = data[userEmailKey] || "gtm_user@example.com";
-          
-          if (webhookUrls.length > 0) {
-            const payload = {
-              event: "gtm_container_published",
-              account_id: accountId,
-              container_id: containerId,
-              user_email: userEmail,
-              timestamp: new Date().toISOString()
-            };
-
-            // Send to each webhook URL
-            webhookUrls.forEach(webhookUrl => {
-              try {
-                // Ensure URL has protocol
-                let processedUrl = webhookUrl;
-                if (!webhookUrl.startsWith('http://') && !webhookUrl.startsWith('https://')) {
-                  processedUrl = 'http://' + webhookUrl;
-                }
-                
-                fetch(processedUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify(payload)
-                })
-                .catch(error => {
-                  console.error(`Error sending webhook to ${webhookUrl}:`, error);
-                });
-              } catch (error) {
-                console.error(`Error processing webhook URL ${webhookUrl}:`, error);
-              }
-            });
-          }
-        });
+        const accountMatches = !webhook.accountFilter || matchesFilter(webhook.accountFilter, accountId);
+        const containerMatches = !webhook.containerFilter || matchesFilter(webhook.containerFilter, containerId);
+        
+        return accountMatches && containerMatches;
+      });
+      
+      if (matchingWebhooks.length === 0) {
+        logToConsole('No matching webhooks for this event');
+        return;
       }
-    }
+      
+      logToConsole(`Found ${matchingWebhooks.length} matching webhooks for this event`);
+      
+      // Prepare payload once
+      const payload = {
+        event: "gtm_container_published",
+        account_id: accountId,
+        container_id: containerId,
+        user_email: userEmail,
+        timestamp: new Date().toISOString()
+      };
+      
+      logToConsole('Sending payload:', payload);
+      
+      // Send to each matching webhook
+      matchingWebhooks.forEach(webhook => {
+        sendWebhookPayload(webhook, payload);
+      });
+    });
   },
   { urls: ["https://tagmanager.google.com/*"] }
 );
+
+// Send payload to webhook
+function sendWebhookPayload(webhook, payload) {
+  try {
+    const processedUrl = processWebhookUrl(webhook);
+    
+    if (!processedUrl) {
+      logToConsole('Invalid or missing webhook URL');
+      return;
+    }
+    
+    logToConsole('Sending to webhook:', processedUrl);
+    
+    fetch(processedUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(response => {
+      if (response.ok) {
+        logToConsole('Successfully sent to webhook:', processedUrl);
+      } else {
+        logToConsole('Failed to send to webhook:', processedUrl, response.status, response.statusText);
+      }
+    })
+    .catch(error => {
+      logToConsole('Error sending to webhook:', processedUrl, error);
+    });
+  } catch (error) {
+    logToConsole('Exception when processing webhook:', error);
+  }
+}
