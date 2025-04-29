@@ -19,6 +19,12 @@
       "js": ["content.js"]
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-script.js"],
+      "matches": ["https://tagmanager.google.com/*"]
+    }
+  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {

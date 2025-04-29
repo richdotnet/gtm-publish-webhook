@@ -1,5 +1,6 @@
 const webhookUrlsKey = 'webhookUrls';
 const consoleLoggingKey = 'consoleLogging';
+const excludeEmailKey = 'excludeEmail';
 
 // Helper function to check if a value matches a filter pattern
 function matchesFilter(filter, value) {
@@ -35,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     consoleLoggingCheckbox: document.getElementById('console-logging'),
     debugSaveButton: document.getElementById('debug-save-button'),
     savedWebhooksContainer: document.getElementById('saved-webhooks-dropdown-container'),
+    excludeEmailCheckbox: document.getElementById('exclude-email'),
     
     // Dropdown elements
     selectSelected: document.querySelector('.select-selected'),
@@ -60,18 +62,13 @@ document.addEventListener('DOMContentLoaded', () => {
     initDropdown();
     
     // Set up page navigation
-    elements.settingsButton.addEventListener('click', () => {
-      showSettingsPage();
-    });
-    
-    elements.backButton.addEventListener('click', () => {
-      showMainPage();
-    });
+    elements.settingsButton.addEventListener('click', showSettingsPage);
+    elements.backButton.addEventListener('click', showMainPage);
     
     // Debug save button
     elements.debugSaveButton.addEventListener('click', () => {
-      saveConsoleLoggingPreference();
-      showToast(elements.consoleLoggingCheckbox.checked ? 'Console logging enabled' : 'Console logging disabled');
+      saveDebugPreferences();
+      showToast('Settings saved');
       showMainPage();
     });
     
@@ -91,9 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Add webhook button
-    elements.addWebhookButton.addEventListener('click', () => {
-      addWebhookGroup();
-    });
+    elements.addWebhookButton.addEventListener('click', () => addWebhookGroup());
     
     // Save button
     elements.saveButton.addEventListener('click', () => {
@@ -102,11 +97,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (success) {
             elements.statusDot.classList.add('active');
             elements.statusText.textContent = 'Monitoring active';
-            showToast('Settings saved successfully');
+            showToast('Settings saved');
           }
         })
         .catch(() => {
-          showToast('Error saving settings. Please try again.', true);
+          showToast('Error saving settings', true);
         });
     });
     
@@ -114,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.sendTestButton.addEventListener('click', () => {
       if (elements.testSavedOption.checked) {
         if (!selectedWebhookUrl) {
-          showToast('Please select a webhook to test', true);
+          showToast('Please select a webhook', true);
           return;
         }
         sendTestWebhook(selectedWebhookUrl);
@@ -172,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.mainPage.classList.add('hidden');
     elements.settingsPage.classList.remove('hidden');
     populateWebhooksDropdown();
-    loadConsoleLoggingPreference();
+    loadDebugPreferences();
   }
 
   // Load saved webhook URLs with conditions
@@ -202,25 +197,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Console logging preference
-  function loadConsoleLoggingPreference() {
-    chrome.storage.sync.get([consoleLoggingKey], (data) => {
-      // Default to true (enabled) if not set
-      elements.consoleLoggingCheckbox.checked = data[consoleLoggingKey] !== false;
-      
-      // Log the initial state if enabled
-      if (elements.consoleLoggingCheckbox.checked) {
-        console.log('GTM Publish Webhook: Console logging is enabled');
+  // Combined loading of all debug preferences
+  function loadDebugPreferences() {
+    chrome.storage.sync.get(
+      { 
+        [consoleLoggingKey]: true,  // Default: enabled
+        [excludeEmailKey]: false     // Default: include email
+      }, 
+      (data) => {
+        elements.consoleLoggingCheckbox.checked = data[consoleLoggingKey];
+        elements.excludeEmailCheckbox.checked = data[excludeEmailKey];
       }
-    });
+    );
   }
-  
-  function saveConsoleLoggingPreference() {
-    const isEnabled = elements.consoleLoggingCheckbox.checked;
-    chrome.storage.sync.set({ [consoleLoggingKey]: isEnabled }, () => {
-      if (isEnabled) {
-        console.log('GTM Publish Webhook: Console logging preference saved:', isEnabled);
-      }
+
+  function saveDebugPreferences() {
+    chrome.storage.sync.set({ 
+      [consoleLoggingKey]: elements.consoleLoggingCheckbox.checked,
+      [excludeEmailKey]: elements.excludeEmailCheckbox.checked 
     });
   }
   
@@ -284,21 +278,21 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < webhooks.length; i++) {
       let processedUrl = webhooks[i].url;
       if (!processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
-        processedUrl = 'http://' + processedUrl;
+        processedUrl = 'https://' + processedUrl; // Use HTTPS by default
         webhooks[i].url = processedUrl;
       }
       
       try {
         new URL(processedUrl);
       } catch (e) {
-        showToast(`Invalid URL format: ${webhooks[i].url}`, true);
+        showToast(`Invalid URL: ${webhooks[i].url}`, true);
         return Promise.resolve(false);
       }
     }
     
     return new Promise((resolve) => {
       chrome.storage.sync.set({ [webhookUrlsKey]: webhooks }, () => {
-        logToConsole('Webhooks saved:', webhooks);
+        logToConsole('Webhooks saved:', webhooks.length);
         resolve(true);
       });
     });
@@ -396,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Process URL to ensure it has protocol
     let processedUrl = url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      processedUrl = 'http://' + url;
+      processedUrl = 'https://' + url; // Use HTTPS by default
     }
     
     // Validate URL for manual entry
@@ -414,39 +408,40 @@ document.addEventListener('DOMContentLoaded', () => {
       event: "gtm_container_published",
       account_id: "test_account",
       container_id: "test_container",
-      user_email: "test@example.com",
       timestamp: new Date().toISOString(),
       is_test: true
     };
     
-    // Log and update UI
-    logToConsole(`Sending test to ${isManual ? 'manual' : ''} webhook:`, processedUrl);
-    logToConsole('Test payload:', testPayload);
-    elements.sendTestButton.disabled = true;
-    elements.sendTestButton.textContent = 'Sending...';
-    
-    // Send request
-    fetch(processedUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(testPayload)
-    })
-    .then(response => {
-      if (response.ok) {
-        showToast('Test sent successfully');
-        logToConsole('Test sent successfully to:', processedUrl);
-      } else {
-        showToast(`Failed to send test: ${response.status} ${response.statusText}`, true);
-        logToConsole('Test failed:', response.status, response.statusText);
+    // Add email only if not excluded
+    chrome.storage.sync.get([excludeEmailKey], (data) => {
+      if (!data[excludeEmailKey]) {
+        testPayload.user_email = "test@example.com";
       }
-    })
-    .catch(error => {
-      showToast(`Error: ${error.message}`, true);
-      logToConsole('Test error:', error);
-    })
-    .finally(() => {
-      elements.sendTestButton.disabled = false;
-      elements.sendTestButton.textContent = 'Send Test';
+      
+      // Update UI
+      elements.sendTestButton.disabled = true;
+      elements.sendTestButton.textContent = 'Sending...';
+      
+      // Send request
+      fetch(processedUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testPayload)
+      })
+      .then(response => {
+        if (response.ok) {
+          showToast('Test sent successfully');
+        } else {
+          showToast(`Failed: ${response.status}`, true);
+        }
+      })
+      .catch(error => {
+        showToast('Connection error', true);
+      })
+      .finally(() => {
+        elements.sendTestButton.disabled = false;
+        elements.sendTestButton.textContent = 'Send Test';
+      });
     });
   }
   
@@ -458,33 +453,34 @@ document.addEventListener('DOMContentLoaded', () => {
   
   function logToConsole(...args) {
     chrome.storage.sync.get([consoleLoggingKey], (data) => {
-      if (data[consoleLoggingKey] !== false) {
-        console.log('GTM Publish Webhook:', ...args);
+      if (data[consoleLoggingKey]) {
+        console.log('GTM Publish Monitor:', ...args);
       }
     });
   }
 
   function showToast(message, isError = false) {
     // Reset and set initial state
-    elements.toast.style.display = 'none';
-    elements.toast.className = `toast ${isError ? 'error' : ''}`;
-    elements.toast.textContent = message;
+    const toast = elements.toast;
+    toast.style.display = 'none';
+    toast.className = `toast ${isError ? 'error' : ''}`;
+    toast.textContent = message;
     
     // Show with animation
     requestAnimationFrame(() => {
-      elements.toast.style.display = 'block';
+      toast.style.display = 'block';
       
       // Small delay to ensure transition works
       setTimeout(() => {
-        elements.toast.classList.add('show');
+        toast.classList.add('show');
         
-        // Auto-hide after 3 seconds
+        // Auto-hide after 2.5 seconds
         setTimeout(() => {
-          elements.toast.classList.remove('show');
+          toast.classList.remove('show');
           setTimeout(() => {
-            elements.toast.style.display = 'none';
-          }, 300); // Transition duration
-        }, 3000);
+            toast.style.display = 'none';
+          }, 300);
+        }, 2500);
       }, 10);
     });
   }
